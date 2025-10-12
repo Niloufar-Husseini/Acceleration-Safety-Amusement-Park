@@ -81,32 +81,42 @@ st.markdown(
             text-align: center !important;
             border-radius: 8px !important;
         }
+        
         /* Table styling */
         .stDataFrame {
             width: 100% !important;  /* Ensure the table takes up full width */
             table-layout: auto !important;  /* Allow columns to adjust based on content */
         }
-        
+
         table {
             width: 100% !important;  /* Make sure the table is full width */
             table-layout: auto !important;  /* Allow table columns to adjust dynamically */
             color: #333333 !important;  /* Set text color for table content */
         }
-        
+
         th, td {
             padding: 8px !important;
             text-align: left !important;
             border: 1px solid #ddd !important;  /* Border styling */
         }
-        
+
         .stDataFrame > div > div {
             background-color: #FFFFFF !important;  /* Ensure background color for tables */
         }
-        
+
         .stDataFrame table {
             width: 100% !important;  /* Full width for tables */
             font-size: 14px !important;  /* Set font size */
             word-wrap: break-word !important;  /* Prevent word overflow */
+        }
+        
+        /* ---- shrink every st.image ---- */
+        .stApp img {
+            max-width: 70% !important;   /* try 30 %, 50 %, 200 px, whatever */
+            height: auto !important;     /* keep aspect ratio */
+            display: block;              /* centre it (optional) */
+            margin-left: auto;
+            margin-right: auto;
         }
 
     </style>
@@ -308,9 +318,7 @@ def check_combined_safety_all(time_s, gx, gy, gz, ride_type: str):
     return safe_pts, unsafe_pts
 
 
-# --- PLot Oval Shaped Combined accelerations ---
-
-
+# --- PLot Oval Shaped diagram for Combined accelerations ---
 # --- calculates the admissible limits for each axis ---
 def sign_limit(axis, sign, ride_type):
     """
@@ -396,6 +404,68 @@ def pair_plot_raw(ax_vals, ay_vals, axisA, axisB, ride_type, title):
         go.Scatter(
             x=ax_vals[~safe],
             y=ay_vals[~safe],
+            mode="markers",
+            name="Unsafe",
+            marker=dict(color="red"),
+            opacity=0.85,
+        )
+    )
+
+    # 1:1 aspect to keep ellipsoid true
+    fig.update_layout(
+        title=title,
+        xaxis_title=f"a{axisA} (g)",
+        yaxis_title=f"a{axisB} (g)",
+        xaxis=dict(zeroline=True),
+        yaxis=dict(zeroline=True, scaleanchor="x", scaleratio=1),
+        legend=dict(orientation="h"),
+    )
+    return fig
+
+
+# --- Normalized Combined Safety Check (Ellipsoid) for Axis Pairs ---
+def pair_plot_normalized(ax_vals, ay_vals, axisA, axisB, ride_type, title):
+    """
+    Generates the combined safety plot with normalized ellipsoidal limits
+    for each axis pair (X-Y, Y-Z, X-Z).
+    """
+    # Calculate admissible accelerations for each axis
+    A_pos = sign_limit(axisA, +1, ride_type)
+    A_neg = sign_limit(axisA, -1, ride_type)
+    B_pos = sign_limit(axisB, +1, ride_type)
+    B_neg = sign_limit(axisB, -1, ride_type)
+
+    # Normalize the data points by dividing by admissible accelerations
+    ax_vals_norm = ax_vals / A_pos
+    ay_vals_norm = ay_vals / B_pos
+
+    # Calculate the normalized ellipsoidal boundary
+    th = np.linspace(0, 2 * np.pi, 720)
+    r = r_of_theta(th, A_pos, A_neg, B_pos, B_neg)
+    bx = r * np.cos(th)
+    by = r * np.sin(th)
+
+    # Safe/unsafe check based on normalized ellipsoidal formula
+    safe = combined_safe_mask(ax_vals_norm, ay_vals_norm, A_pos, A_neg, B_pos, B_neg)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(x=bx, y=by, mode="lines", name="Combined limit", line=dict(width=2))
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=ax_vals_norm[safe],
+            y=ay_vals_norm[safe],
+            mode="markers",
+            name="Safe",
+            opacity=0.6,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=ax_vals_norm[~safe],
+            y=ay_vals_norm[~safe],
             mode="markers",
             name="Unsafe",
             marker=dict(color="red"),
@@ -542,10 +612,15 @@ st.markdown(
             font-weight: bold;'>when USING AMUSEMENT DEVICES ⚙️</h3>""",
     unsafe_allow_html=True,
 )
+st.markdown(
+    """<h3 style='color: #000000; font-size: 20px; text-align: center;
+            font-weight: bold;'>Standard: BS ISO 17842-1:2023, Safety of amusement rides and amusement devices, Part 1: Design and manufacture</h3>""",
+    unsafe_allow_html=True,
+)
 
 # --- Image and Guide ---
 st.subheader("Body Coordinate System:")
-AXIS_GUIDE_URL = "assets/Axis_Guide_new.png"
+AXIS_GUIDE_URL = "Axis_Guide_new.png"
 st.image(AXIS_GUIDE_URL, caption="3-axis X-Y-Z", use_column_width=True)
 
 st.write(
@@ -560,21 +635,30 @@ from the mounted sensors.
 st.subheader(
     "Acceleration is defined in accordance with the following coordinate system:"
 )
-st.write(
-    """
-+a_z presses the body into the seat downwards, described as “eyes down”.
-
-−a_z lifts the body out of the seat, described as “eyes up”.
-
-+a_y presses the body sideward to the right, described as “eyes right”.
-
-−a_y presses the body sideward to the left, described as “eyes left”.
-
-+a_x presses the body into the seat backward, described as “eyes back”.
-
-−a_x pushes the body out of the seat forward, described as “eyes front”.  
-"""
+st.markdown(
+    "+a<sub>z</sub> presses the body into the seat downwards, described as “eyes down”.<br>"
+    "−a<sub>z</sub> lifts the body out of the seat, described as “eyes up”.<br>"
+    "+a<sub>y</sub> presses the body sideward to the right, described as “eyes right”.<br>"
+    "−a<sub>y</sub> presses the body sideward to the left, described as “eyes left”.<br>"
+    "+a<sub>x</sub> presses the body into the seat backward, described as “eyes back”.<br>"
+    "−a<sub>x</sub> pushes the body out of the seat forward, described as “eyes front”.",
+    unsafe_allow_html=True,
 )
+# st.write(
+#     """
+# +a<sub>z</sub> presses the body into the seat downwards, described as “eyes down”.
+
+# −a<sub>z</sub> lifts the body out of the seat, described as “eyes up”.
+
+# +a<sub>y</sub> presses the body sideward to the right, described as “eyes right”.
+
+# −a<sub>y</sub> presses the body sideward to the left, described as “eyes left”.
+
+# +a<sub>x</sub> presses the body into the seat backward, described as “eyes back”.
+
+# −a<sub>x</sub> pushes the body out of the seat forward, described as “eyes front”.
+# """
+# )
 
 # --- Mode Selection ---
 mode = st.radio("Select Mode", ["Manual Input", "Upload Dataset"])
@@ -628,15 +712,22 @@ else:
         df["acc_z_filtered"] = butter_lowpass_filter(
             df["acc_z"], cutoff=5, fs=fs, order=4
         )
+        # map the old names to the new ones
+        new_names = {
+            "time_sec": "time (s)",
+            "acc_x_filtered": "filtered accₓ (g)",
+            "acc_y_filtered": "filtered accᵧ (g)",
+            "acc_z_filtered": "filtered acc𝓏 (g)",
+        }
 
         df_preview = df[
             ["time_sec", "acc_x_filtered", "acc_y_filtered", "acc_z_filtered"]
-        ]
-        st.markdown("### Data Preview")          
+        ].rename(columns=new_names)
+        st.markdown("### Data Preview")
         st.dataframe(df_preview.head(20), use_container_width=True)
         # check if you wanna see the whole data
         if st.checkbox("Show All Data After Processing", value=False):
-            st.markdown("### Data Preview")          
+            st.markdown("### Data Preview")
             st.dataframe(df_preview, use_container_width=True)
         st.subheader("Note:")
         st.write(
@@ -816,8 +907,8 @@ else:
                         "Start (s)": seg["start"],
                         "End (s)": seg["end"],
                         "Duration (s)": seg["duration"],
-                        "g_min": seg["g_min"],
-                        "g_max": seg["g_max"],
+                        "g_min (g)": seg["g_min"],
+                        "g_max (g)": seg["g_max"],
                     }
                 )
 
@@ -833,7 +924,7 @@ else:
                     {
                         "Axis": axis,
                         "Time (s)": t_spike,
-                        "acceleration": g_spike,
+                        "acceleration (g)": g_spike,
                         "Direction": "Positive" if g_spike > 0 else "Negative",
                     }
                 )
@@ -853,8 +944,8 @@ else:
                             "Start (s)": seg["start"],
                             "End (s)": seg["end"],
                             "Duration (s)": seg["duration"],
-                            "g_min": seg["g_min"],
-                            "g_max": seg["g_max"],
+                            "g_min (g)": seg["g_min"],
+                            "g_max (g)": seg["g_max"],
                             "Status": "Safe",
                         }
                     )
@@ -865,15 +956,27 @@ else:
                             "Start (s)": seg["start"],
                             "End (s)": seg["end"],
                             "Duration (s)": seg["duration"],
-                            "g_min": seg["g_min"],
-                            "g_max": seg["g_max"],
+                            "g_min (g)": seg["g_min"],
+                            "g_max (g)": seg["g_max"],
                             "Status": "Unsafe",
                         }
                     )
 
             if all_segments:
                 st.write("### All Segments (Safe and Unsafe)")
-                st.dataframe(pd.DataFrame(all_segments), use_container_width=True)
+                df_show = pd.DataFrame(all_segments)
+
+                # ----  colour the Status background  ----
+                def _colour_status(val):
+                    bg = "#ffdddd" if val == "Unsafe" else "#ddffdd"
+                    return f"background-color: {bg};"
+                    # if we want to color the texts "unsafe" to red and "safe" to green we should uncomment next 2 lines.
+                    # colour = "red" if val == "Unsafe" else "green"
+                    # return f"color: {colour}; font-weight: bold"
+
+                styled = df_show.style.map(_colour_status, subset=["Status"])
+
+                st.dataframe(styled, use_container_width=True)
 
         # --- Section 2: Combined Acceleration Check ---
         st.markdown(
@@ -965,9 +1068,9 @@ else:
         combined_rows = [
             {
                 "Time (s)": t,
-                "acceleration X": gx,
-                "acceleration Y": gy,
-                "acceleration Z": gz,
+                "acceleration X (g)": gx,
+                "acceleration Y (g)": gy,
+                "acceleration Z (g)": gz,
                 "Status": "Unsafe",
             }
             for (t, gx, gy, gz) in results["combined"]["unsafe"]
@@ -982,11 +1085,6 @@ else:
         gy = df["acc_y_filtered"].to_numpy()
         gz = df["acc_z_filtered"].to_numpy()
 
-        # st.markdown("""
-        # <div style='width:100%; background:#2196F3; color:#fff; padding:10px; margin-top:10px;'>
-        # <h3 style='margin:0; text-align:center;'>Combined Acceleration – Ellipsoidal Limits</h3>
-        # </div>
-        # """, unsafe_allow_html=True)
         st.subheader("Combined Acceleration – Ellipsoidal Graphs")
 
         col1, col2, col3 = st.columns(3)
@@ -1000,11 +1098,20 @@ else:
             fig_xz = pair_plot_raw(gx, gz, "X", "Z", ride_type, "X–Z combined")
             st.plotly_chart(fig_xz, use_container_width=True)
 
-
-
-
-
-
-
-
-
+        # 3 other plots with adm acc and normalized data
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            fig_xy = pair_plot_normalized(
+                gx, gy, "X", "Y", ride_type, "Normalized X-Y Combined Safety"
+            )
+            st.plotly_chart(fig_xy, use_container_width=True)
+        with col2:
+            fig_yz = pair_plot_normalized(
+                gy, gz, "Y", "Z", ride_type, "Normalized Y-Z Combined Safety"
+            )
+            st.plotly_chart(fig_yz, use_container_width=True)
+        with col3:
+            fig_xz = pair_plot_normalized(
+                gx, gz, "X", "Z", ride_type, "Normalized X-Z Combined Safety"
+            )
+            st.plotly_chart(fig_xz, use_container_width=True)
