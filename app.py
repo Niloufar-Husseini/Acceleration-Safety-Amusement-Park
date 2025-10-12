@@ -620,7 +620,7 @@ st.markdown(
 
 # --- Image and Guide ---
 st.subheader("Body Coordinate System:")
-AXIS_GUIDE_URL = "Assets/Axis_Guide_new.png"
+AXIS_GUIDE_URL = "assets/Axis_Guide_new.png"
 st.image(AXIS_GUIDE_URL, caption="3-axis X-Y-Z", use_column_width=True)
 
 st.write(
@@ -1115,4 +1115,5 @@ else:
                 gx, gz, "X", "Z", ride_type, "Normalized X-Z Combined Safety"
             )
             st.plotly_chart(fig_xz, use_container_width=True)
+
 
