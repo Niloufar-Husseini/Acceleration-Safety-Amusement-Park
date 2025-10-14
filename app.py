@@ -127,7 +127,13 @@ st.markdown(
 
 # --- ISO 17842-1:2023 Thresholds ---
 THRESHOLDS = {
-    "Z": [(6.0, 1), (4.0, 4.0), (3.0, 11.8), (2, 40), (1.5, float("inf"))],
+    "Z": [
+        (6.0, 1),
+        (4.0, 4.0),
+        (3.0, 11.8),
+        (2, 40),
+        (1.5, float("inf")),
+    ],  # diagram modified 0.5g inf
     "Y": [(3.0, 1), (2.0, float("inf"))],
     "X": [
         (6.0, 1),
@@ -410,62 +416,93 @@ def pair_plot_raw(ax_vals, ay_vals, axisA, axisB, ride_type, title):
             opacity=0.85,
         )
     )
+    # a dictionary to map axis names to their subscript characters
+    subscript_map = {
+        "X": "ₓ",
+        "Y": "ᵧ",
+        "Z": "𝓏",
+    }
+
+    # Generate the axis labels with subscripts
+    xaxis_label = f"a{subscript_map.get(axisA, '')} (g)"
+    yaxis_label = f"a{subscript_map.get(axisB, '')} (g)"
 
     # 1:1 aspect to keep ellipsoid true
     fig.update_layout(
         title=title,
-        xaxis_title=f"a{axisA} (g)",
-        yaxis_title=f"a{axisB} (g)",
+        xaxis_title=xaxis_label,
+        yaxis_title=yaxis_label,
         xaxis=dict(zeroline=True),
         yaxis=dict(zeroline=True, scaleanchor="x", scaleratio=1),
-        legend=dict(orientation="h"),
+        legend=dict(
+            orientation="h",
+            y=-0.3,
+            x=0.5,
+            xanchor="center",
+            yanchor="top",
+            font=dict(size=12),
+        ),
+        margin=dict(b=100),
     )
     return fig
 
 
 # --- Normalized Combined Safety Check (Ellipsoid) for Axis Pairs ---
-def pair_plot_normalized(ax_vals, ay_vals, axisA, axisB, ride_type, title):
+def normalized_pair_plot(gx, gy, ride_type, axisA, axisB, title):
     """
-    Generates the combined safety plot with normalized ellipsoidal limits
-    for each axis pair (X-Y, Y-Z, X-Z).
+    Scatter plot in the *normalised* plane of axisA vs axisB
+    USING THE CLOSEST ADMISSIBLE LIMIT (exactly like check_combined_safety_all).
+    The boundary is an ellipse whose semi-axes are the smallest limits in each quadrant.
     """
-    # Calculate admissible accelerations for each axis
-    A_pos = sign_limit(axisA, +1, ride_type)
-    A_neg = sign_limit(axisA, -1, ride_type)
-    B_pos = sign_limit(axisB, +1, ride_type)
-    B_neg = sign_limit(axisB, -1, ride_type)
-
-    # Normalize the data points by dividing by admissible accelerations
-    ax_vals_norm = ax_vals / A_pos
-    ay_vals_norm = ay_vals / B_pos
-
-    # Calculate the normalized ellipsoidal boundary
-    th = np.linspace(0, 2 * np.pi, 720)
-    r = r_of_theta(th, A_pos, A_neg, B_pos, B_neg)
-    bx = r * np.cos(th)
-    by = r * np.sin(th)
-
-    # Safe/unsafe check based on normalized ellipsoidal formula
-    safe = combined_safe_mask(ax_vals_norm, ay_vals_norm, A_pos, A_neg, B_pos, B_neg)
 
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(x=bx, y=by, mode="lines", name="Combined limit", line=dict(width=2))
-    )
 
+    # Add unit circle
+    th = np.linspace(0, 2 * np.pi, 720)
+    unit_x = np.cos(th)
+    unit_y = np.sin(th)
     fig.add_trace(
         go.Scatter(
-            x=ax_vals_norm[safe],
-            y=ay_vals_norm[safe],
+            x=unit_x, y=unit_y, mode="lines", name="Unit Circle", line=dict(width=2)
+        )
+    )
+
+    # Calculate admissible limits for each axis
+    adm_A = np.array([admissible_limit(axisA, g, ride_type) for g in gx])
+    adm_B = np.array([admissible_limit(axisB, g, ride_type) for g in gy])
+
+    # Replace inf with the largest finite value from the thresholds
+    max_finite_A = max([L for L, _ in THRESHOLDS[axisA] if L != float("inf")])
+    max_finite_B = max([L for L, _ in THRESHOLDS[axisB] if L != float("inf")])
+    adm_A = np.where(np.isinf(adm_A), max_finite_A, adm_A)
+    adm_B = np.where(np.isinf(adm_B), max_finite_B, adm_B)
+
+    # Normalize the data
+    # norm_A = gx / np.clip(adm_A, 1e-12, None)
+    # norm_B = gy / np.clip(adm_B, 1e-12, None)
+    norm_A = gx / adm_A
+    norm_B = gy / adm_B
+
+    # Safety mask (unit-circle rule)
+    safe_mask = (norm_A**2 + norm_B**2) <= 1.0
+
+    # Add safe points
+    fig.add_trace(
+        go.Scatter(
+            x=norm_A[safe_mask],
+            y=norm_B[safe_mask],
             mode="markers",
             name="Safe",
+            marker=dict(color="blue"),
             opacity=0.6,
         )
     )
+
+    # Add unsafe points
     fig.add_trace(
         go.Scatter(
-            x=ax_vals_norm[~safe],
-            y=ay_vals_norm[~safe],
+            x=norm_A[~safe_mask],
+            y=norm_B[~safe_mask],
             mode="markers",
             name="Unsafe",
             marker=dict(color="red"),
@@ -473,14 +510,33 @@ def pair_plot_normalized(ax_vals, ay_vals, axisA, axisB, ride_type, title):
         )
     )
 
-    # 1:1 aspect to keep ellipsoid true
+    # a dictionary to map axis names to their subscript characters
+    subscript_map = {
+        "X": "ₓ",
+        "Y": "ᵧ",
+        "Z": "𝓏",
+    }
+
+    # Generate the axis labels with subscripts
+    xaxis_label = f"a{subscript_map.get(axisA, '')} / adm{subscript_map.get(axisA, '')}"
+    yaxis_label = f"a{subscript_map.get(axisB, '')} / adm{subscript_map.get(axisB, '')}"
+
+    # Update layout to handle large values
     fig.update_layout(
         title=title,
-        xaxis_title=f"a{axisA} (g)",
-        yaxis_title=f"a{axisB} (g)",
+        xaxis_title=xaxis_label,
+        yaxis_title=yaxis_label,
         xaxis=dict(zeroline=True),
         yaxis=dict(zeroline=True, scaleanchor="x", scaleratio=1),
-        legend=dict(orientation="h"),
+        legend=dict(
+            orientation="h",
+            y=-0.3,
+            x=0.5,
+            xanchor="center",
+            yanchor="top",
+            font=dict(size=12),
+        ),
+        margin=dict(b=100),
     )
     return fig
 
@@ -644,21 +700,7 @@ st.markdown(
     "−a<sub>x</sub> pushes the body out of the seat forward, described as “eyes front”.",
     unsafe_allow_html=True,
 )
-# st.write(
-#     """
-# +a<sub>z</sub> presses the body into the seat downwards, described as “eyes down”.
 
-# −a<sub>z</sub> lifts the body out of the seat, described as “eyes up”.
-
-# +a<sub>y</sub> presses the body sideward to the right, described as “eyes right”.
-
-# −a<sub>y</sub> presses the body sideward to the left, described as “eyes left”.
-
-# +a<sub>x</sub> presses the body into the seat backward, described as “eyes back”.
-
-# −a<sub>x</sub> pushes the body out of the seat forward, described as “eyes front”.
-# """
-# )
 
 # --- Mode Selection ---
 mode = st.radio("Select Mode", ["Manual Input", "Upload Dataset"])
@@ -869,20 +911,26 @@ else:
                 )
 
         # Plot spike points as red dots
+        spike_traces = []
         for axis_name, signal_color in zip(
             ["X", "Y", "Z"], ["cyan", "orange", "green"]
         ):
             spikes = results[axis_name]["spikes"]
-            for t_spike, g_spike in spikes:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[t_spike],
-                        y=[g_spike],
-                        mode="markers",
-                        marker=dict(color="red", size=8),
-                        name=f"{axis_name} spike",
-                    )
+            spike_times = [t_spike for t_spike, _ in spikes]
+            spike_values = [g_spike for _, g_spike in spikes]
+            spike_traces.append(
+                go.Scatter(
+                    x=spike_times,
+                    y=spike_values,
+                    mode="markers",
+                    marker=dict(color="red", size=8),
+                    name=f"{axis_name} spike",
                 )
+            )
+
+        # Add all spike traces to the figure
+        for trace in spike_traces:
+            fig.add_trace(trace)
 
         # Update layout for interactive plotting
         fig.update_layout(
@@ -1045,6 +1093,16 @@ else:
                     ),
                 )
             )
+        # dummy trace for the unsafe segments to appear in the legend
+        fig.add_trace(
+            go.Scatter(
+                x=[None],  # Invisible points
+                y=[None],  # Invisible points
+                mode="lines",
+                line=dict(color="red", width=1),
+                name="Unsafe Combined",
+            )
+        )
 
         # Apply all shapes in a single call to update_layout
         fig.update_layout(
@@ -1101,19 +1159,17 @@ else:
         # 3 other plots with adm acc and normalized data
         col1, col2, col3 = st.columns(3)
         with col1:
-            fig_xy = pair_plot_normalized(
-                gx, gy, "X", "Y", ride_type, "Normalized X-Y Combined Safety"
+            fig_xy = normalized_pair_plot(
+                gx, gy, ride_type, "X", "Y", "Normalized X-Y Combined Safety"
             )
             st.plotly_chart(fig_xy, use_container_width=True)
         with col2:
-            fig_yz = pair_plot_normalized(
-                gy, gz, "Y", "Z", ride_type, "Normalized Y-Z Combined Safety"
+            fig_yz = normalized_pair_plot(
+                gy, gz, ride_type, "Y", "Z", "Normalized Y-Z Combined Safety"
             )
             st.plotly_chart(fig_yz, use_container_width=True)
         with col3:
-            fig_xz = pair_plot_normalized(
-                gx, gz, "X", "Z", ride_type, "Normalized X-Z Combined Safety"
+            fig_xz = normalized_pair_plot(
+                gx, gz, ride_type, "X", "Z", "Normalized X-Z Combined Safety"
             )
             st.plotly_chart(fig_xz, use_container_width=True)
-
-
