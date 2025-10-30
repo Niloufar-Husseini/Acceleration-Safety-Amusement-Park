@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from scipy.signal import butter, lfilter
 
@@ -173,7 +172,7 @@ def butter_lowpass_filter(data, cutoff=5, fs=50, order=4):
     """
     nyq = 0.5 * fs
     normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype="low", analog=False)
+    b, a = butter(order, normal_cutoff, btype="low", analog=False) # type: ignore
     y = lfilter(b, a, data)  # single-pass filtering
     return y
 
