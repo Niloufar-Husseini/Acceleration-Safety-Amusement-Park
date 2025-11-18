@@ -259,7 +259,7 @@ with col2:
                 </div> """,
             unsafe_allow_html=True,)
 
-tab1, tab2 = st.tabs(["Body Coordinate System", "Mode Selection"])
+tab1, tab2 = st.tabs(["General Description", "Mode Selection"])
 
 with tab1:
     # --- Standards ---
@@ -325,56 +325,6 @@ with tab1:
         unsafe_allow_html=True,
     )
 
-
-# # --- Standards ---
-# st.subheader("Standards:")
-# st.markdown(
-#         f"""
-#         <div>
-#             <ul>
-#                 <li>
-#                     BS ISO 17842-1:2023, Safety of amusement rides and amusement devices
-#                 </li>
-#                 <li>
-#                     AS 3533, Amusement rides and devices
-#                 </li> 
-#                 <li>
-#                     INSO 8987
-#                 </li>              
-#             </ul>
-#         </div>
-#         """,
-#         unsafe_allow_html=True,
-#     )
-
-
-
-# # --- Image and Guide ---
-# st.subheader("Body Coordinate System:")
-# AXIS_GUIDE_URL = "assets/Axis_Guide_new.png"
-# st.image(AXIS_GUIDE_URL, caption="3-axis X-Y-Z", use_column_width=True)
-
-# st.write(
-#     """
-# This diagram shows how the X, Y, and Z axes are oriented 
-# relative to the human body while seated in the amusement vehicle.  
-# It is used as a guide when interpreting acceleration data 
-# from the mounted sensors.  
-# """
-# )
-
-# st.subheader(
-#     "Acceleration is defined in accordance with the following coordinate system:"
-# )
-# st.markdown(
-#     "+a<sub>z</sub> presses the body into the seat downwards, described as “eyes down”.<br>"
-#     "−a<sub>z</sub> lifts the body out of the seat, described as “eyes up”.<br>"
-#     "+a<sub>y</sub> presses the body sideward to the right, described as “eyes right”.<br>"
-#     "−a<sub>y</sub> presses the body sideward to the left, described as “eyes left”.<br>"
-#     "+a<sub>x</sub> presses the body into the seat backward, described as “eyes back”.<br>"
-#     "−a<sub>x</sub> pushes the body out of the seat forward, described as “eyes front”.",
-#     unsafe_allow_html=True,
-# )
 
 with tab2:
     # --- Mode Selection ---

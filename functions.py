@@ -550,446 +550,454 @@ def check_series_safety(
     
 def call_calculations(final_file, ride_type):
 
+    tab1, tab2, tab3, tab4 = st.tabs(["Data Overview", "Overall Acceleration Safety Check", "Uniaxial Acceleration Safety Check", "Biaxial Acceleration Safety Check"])
+
     df = read_imu_file(final_file)
 
-    # UI: choose which axes to invert
-    st.subheader("Sensor Direction")
-    invert_axes = st.multiselect(
-        "Invert (multiply by -1) the following axes",
-        ["X", "Y", "Z"],
-        default=["X", "Z"],  # make this [] if we don't want a default
-    )
+    with tab1:
+        # UI: choose which axes to invert
+        st.subheader("Sensor Direction")
+        invert_axes = st.multiselect(
+            "Invert (multiply by -1) the following axes",
+            ["X", "Y", "Z"],
+            default=["X", "Z"],  # make this [] if we don't want a default
+        )
 
-    # Apply inversion on raw data BEFORE filtering
-    for ax in invert_axes:
-        df[f"acc_{ax.lower()}"] = -df[f"acc_{ax.lower()}"]
+        # Apply inversion on raw data BEFORE filtering
+        for ax in invert_axes:
+            df[f"acc_{ax.lower()}"] = -df[f"acc_{ax.lower()}"]
 
-    fs = 50  # your IMU sampling rate
-    df["acc_x_filtered"] = butter_lowpass_filter(
-        df["acc_x"], cutoff=5, fs=fs, order=4
-    )
-    df["acc_y_filtered"] = butter_lowpass_filter(
-        df["acc_y"], cutoff=5, fs=fs, order=4
-    )
-    df["acc_z_filtered"] = butter_lowpass_filter(
-        df["acc_z"], cutoff=5, fs=fs, order=4
-    )
-    # map the old names to the new ones
-    new_names = {
-        "time_sec": "time (s)",
-        "acc_x_filtered": "filtered accₓ (g)",
-        "acc_y_filtered": "filtered accᵧ (g)",
-        "acc_z_filtered": "filtered acc𝓏 (g)",
-    }
+        fs = 50  # your IMU sampling rate
+        df["acc_x_filtered"] = butter_lowpass_filter(
+            df["acc_x"], cutoff=5, fs=fs, order=4
+        )
+        df["acc_y_filtered"] = butter_lowpass_filter(
+            df["acc_y"], cutoff=5, fs=fs, order=4
+        )
+        df["acc_z_filtered"] = butter_lowpass_filter(
+            df["acc_z"], cutoff=5, fs=fs, order=4
+        )
+        # map the old names to the new ones
+        new_names = {
+            "time_sec": "time (s)",
+            "acc_x_filtered": "filtered accₓ (g)",
+            "acc_y_filtered": "filtered accᵧ (g)",
+            "acc_z_filtered": "filtered acc𝓏 (g)",
+        }
 
-    df_preview = df[
-        ["time_sec", "acc_x_filtered", "acc_y_filtered", "acc_z_filtered"]
-    ].rename(columns=new_names)
-    st.markdown("### Data Preview")
-    st.dataframe(df_preview.head(20), use_container_width=True)
-    # check if you wanna see the whole data
-    if st.checkbox("Show All Data After Processing", value=False):
+        df_preview = df[
+            ["time_sec", "acc_x_filtered", "acc_y_filtered", "acc_z_filtered"]
+        ].rename(columns=new_names)
         st.markdown("### Data Preview")
-        st.dataframe(df_preview, use_container_width=True)
-    st.subheader("Note:")
-    st.write(
+        st.dataframe(df_preview.head(20), use_container_width=True)
+        # check if you wanna see the whole data
+        if st.checkbox("Show All Data After Processing", value=False):
+            st.markdown("### Data Preview")
+            st.dataframe(df_preview, use_container_width=True)
+        st.subheader("Note:")
+        st.write(
+            """
+        Post-processed with a 4-pole, single pass,
+        Butterworth low pass filter using a corner frequency of 5 Hz
+        (Section 1.2.1, Annex I, ISO 17842-1)  
         """
-    Post-processed with a 4-pole, single pass,
-    Butterworth low pass filter using a corner frequency of 5 Hz
-    (Section 1.2.1, Annex I, ISO 17842-1)  
-    """
-    )
-
-    results = {}
-    total_unsafe_duration = 0.0
-
-    for axis in ["X", "Y", "Z"]:
-        safe_segments, unsafe_segments, spikes = check_series_safety(
-            axis,
-            df[f"acc_{axis.lower()}_filtered"],  # filtered → segmentation
-            df["time_sec"],
-            ride_type,
-            spike_series=df[f"acc_{axis.lower()}"],  # raw → spike detection
-        )
-        results[axis] = {
-            "safe": safe_segments,
-            "unsafe": unsafe_segments,
-            "spikes": spikes,
-        }
-        # Calculate total unsafe duration based on the traditional safety check
-        total_unsafe_duration += sum(
-            seg["duration"] for seg in unsafe_segments
-        )  # sum durations
-
-    # Combined check (do it once for all three series)
-    comb_safe, comb_unsafe = check_combined_safety_all(
-        df["time_sec"],
-        df["acc_x_filtered"],
-        df["acc_y_filtered"],
-        df["acc_z_filtered"],
-        ride_type,
-    )
-    results["combined"] = {"safe": comb_safe, "unsafe": comb_unsafe}
-
-    # Results per axis
-    st.subheader("Ride Evaluation Results")
-    for axis in ["X", "Y", "Z"]:
-        safe_segments = results[axis]["safe"]
-        unsafe_segments = results[axis]["unsafe"]
-        comb_unsafe = results["combined"]["unsafe"]  # Combined result
-
-        # Display safe/unsafe for traditional segments
-        if len(unsafe_segments) == 0:
-            st.success(
-                f"{axis}-axis: ✅ Safe (all {len(safe_segments)} segments within thresholds)"
-            )
-        else:
-            total_axis_unsafe = sum(
-                seg["duration"] for seg in unsafe_segments
-            )  # ← fix
-            st.error(
-                f"{axis}-axis: ⚠️ {len(unsafe_segments)} unsafe segments "
-                f"(total {total_axis_unsafe:.2f} s beyond limits)"
-            )
-
-        # Display combined unsafe check
-        if axis == "Z":
-            if len(comb_unsafe) == 0:
-                st.success("Combined check (I.1&I.3): ✅ Safe (no unsafe points)")
-            else:
-                st.error(
-                    f"Combined check (I.1&I.3): ⚠️ {len(comb_unsafe)} unsafe points"
-                )
-
-    # Overall
-    if (
-        all(len(results[a]["unsafe"]) == 0 for a in ["X", "Y", "Z"])
-        and len(results["combined"]["unsafe"]) == 0
-    ):
-        st.success("Overall: ✅ Safe")
-    else:
-        st.error(
-            f"Overall: ⚠️ Unsafe – per-axis unsafe duration: {total_unsafe_duration:.2f} s; "
-            f"combined unsafe points: {len(results['combined']['unsafe'])}"
         )
 
-    # --- Section 1: Acceleration for Each Axis ---
-    st.markdown(
-        """
-        <div style='width: 100%; background-color: #2196F3; padding: 10px;'>
-            <h2 style='color: white; text-align: center;'>Acceleration in Each Direction</h2>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
+        results = {}
+        total_unsafe_duration = 0.0
 
-    # Plot for each direction acceleration
-    st.subheader("Acceleration (g) over Time:")
-    fig = go.Figure()
-
-    # Plot acceleration data for each axis
-    fig.add_trace(
-        go.Scatter(
-            x=df["time_sec"],
-            y=df["acc_x_filtered"],
-            mode="lines",
-            name="X-axis g",
-            line=dict(color="cyan"),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["time_sec"],
-            y=df["acc_y_filtered"],
-            mode="lines",
-            name="Y-axis g",
-            line=dict(color="orange"),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["time_sec"],
-            y=df["acc_z_filtered"],
-            mode="lines",
-            name="Z-axis g",
-            line=dict(color="green"),
-        )
-    )
-
-    # Highlight unsafe segments
-    for axis_name, color in zip(["X", "Y", "Z"], ["cyan", "orange", "green"]):
-        unsafe_segments = results[axis_name]["unsafe"]
-        for seg in unsafe_segments:
-            fig.add_vrect(
-                x0=seg["start"],
-                x1=seg["end"],
-                fillcolor="red",
-                opacity=0.3,
-                line_width=0,
-                annotation_text="Unsafe",
-                annotation_position="top right",
-            )
-
-    # Plot spike points as red dots
-    spike_traces = []
-    for axis_name, signal_color in zip(
-        ["X", "Y", "Z"], ["cyan", "orange", "green"]
-    ):
-        spikes = results[axis_name]["spikes"]
-        spike_times = [t_spike for t_spike, _ in spikes]
-        spike_values = [g_spike for _, g_spike in spikes]
-        spike_traces.append(
-            go.Scatter(
-                x=spike_times,
-                y=spike_values,
-                mode="markers",
-                marker=dict(color="red", size=8),
-                name=f"{axis_name} spike",
-            )
-        )
-
-    # Add all spike traces to the figure
-    for trace in spike_traces:
-        fig.add_trace(trace)
-
-    # Update layout for interactive plotting
-    fig.update_layout(
-        xaxis_title="Time (s)",
-        yaxis_title="Acceleration (g)",
-        template="plotly_dark",  # dark theme
-        showlegend=True,
-        hovermode="x unified",  # Show hover for all data points at once
-        xaxis=dict(rangeslider=dict(visible=True)),  # Enable zooming
-    )
-
-    # Display the interactive plot
-    st.plotly_chart(fig)
-
-    # Table of unsafe segments
-    rows = []
-    for axis in ["X", "Y", "Z"]:
-        for seg in results[axis]["unsafe"]:
-            rows.append(
-                {
-                    "Axis": axis,
-                    "Start (s)": seg["start"],
-                    "End (s)": seg["end"],
-                    "Duration (s)": seg["duration"],
-                    "g_min (g)": seg["g_min"],
-                    "g_max (g)": seg["g_max"],
-                }
-            )
-
-    if rows:
-        st.write("### Unsafe Segments")
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-    # Table of spikes
-    spike_rows = []
-    for axis in ["X", "Y", "Z"]:
-        for t_spike, g_spike in results[axis]["spikes"]:
-            spike_rows.append(
-                {
-                    "Axis": axis,
-                    "Time (s)": t_spike,
-                    "acceleration (g)": g_spike,
-                    "Direction": "Positive" if g_spike > 0 else "Negative",
-                }
-            )
-
-    if spike_rows:
-        st.write("### Detected Spikes (Above Threshold Magnitudes)")
-        st.dataframe(pd.DataFrame(spike_rows), use_container_width=True)
-
-    # Table of all segments
-    if st.checkbox("Show All Segments Table (Safe + Unsafe)", value=False):
-        all_segments = []
         for axis in ["X", "Y", "Z"]:
-            for seg in results[axis]["safe"]:
-                all_segments.append(
-                    {
-                        "Axis": axis,
-                        "Start (s)": seg["start"],
-                        "End (s)": seg["end"],
-                        "Duration (s)": seg["duration"],
-                        "g_min (g)": seg["g_min"],
-                        "g_max (g)": seg["g_max"],
-                        "Status": "Safe",
-                    }
+            safe_segments, unsafe_segments, spikes = check_series_safety(
+                axis,
+                df[f"acc_{axis.lower()}_filtered"],  # filtered → segmentation
+                df["time_sec"],
+                ride_type,
+                spike_series=df[f"acc_{axis.lower()}"],  # raw → spike detection
+            )
+            results[axis] = {
+                "safe": safe_segments,
+                "unsafe": unsafe_segments,
+                "spikes": spikes,
+            }
+            # Calculate total unsafe duration based on the traditional safety check
+            total_unsafe_duration += sum(
+                seg["duration"] for seg in unsafe_segments
+            )  # sum durations
+
+        # Combined check (do it once for all three series)
+        comb_safe, comb_unsafe = check_combined_safety_all(
+            df["time_sec"],
+            df["acc_x_filtered"],
+            df["acc_y_filtered"],
+            df["acc_z_filtered"],
+            ride_type,
+        )
+        results["combined"] = {"safe": comb_safe, "unsafe": comb_unsafe}
+
+    with tab2: 
+
+        # Results per axis
+        st.subheader("Overall Acceleration safety Check")
+        for axis in ["X", "Y", "Z"]:
+            safe_segments = results[axis]["safe"]
+            unsafe_segments = results[axis]["unsafe"]
+            comb_unsafe = results["combined"]["unsafe"]  # Combined result
+
+            # Display safe/unsafe for traditional segments
+            if len(unsafe_segments) == 0:
+                st.success(
+                    f"{axis}-axis: ✅ Safe (all {len(safe_segments)} segments within thresholds)"
                 )
-            for seg in results[axis]["unsafe"]:
-                all_segments.append(
-                    {
-                        "Axis": axis,
-                        "Start (s)": seg["start"],
-                        "End (s)": seg["end"],
-                        "Duration (s)": seg["duration"],
-                        "g_min (g)": seg["g_min"],
-                        "g_max (g)": seg["g_max"],
-                        "Status": "Unsafe",
-                    }
+            else:
+                total_axis_unsafe = sum(
+                    seg["duration"] for seg in unsafe_segments
+                )  # ← fix
+                st.error(
+                    f"{axis}-axis: ⚠️ {len(unsafe_segments)} unsafe segments "
+                    f"(total {total_axis_unsafe:.2f} s beyond limits)"
                 )
 
-        if all_segments:
-            st.write("### All Segments (Safe and Unsafe)")
-            df_show = pd.DataFrame(all_segments)
+            # Display combined unsafe check
+            if axis == "Z":
+                if len(comb_unsafe) == 0:
+                    st.success("Combined check (I.1&I.3): ✅ Safe (no unsafe points)")
+                else:
+                    st.error(
+                        f"Combined check (I.1&I.3): ⚠️ {len(comb_unsafe)} unsafe points"
+                    )
 
-            # ----  colour the Status background  ----
-            def _colour_status(val):
-                bg = "#ffdddd" if val == "Unsafe" else "#ddffdd"
-                return f"background-color: {bg};"
-                # if we want to color the texts "unsafe" to red and "safe" to green we should uncomment next 2 lines.
-                # colour = "red" if val == "Unsafe" else "green"
-                # return f"color: {colour}; font-weight: bold"
+        # Overall
+        if (
+            all(len(results[a]["unsafe"]) == 0 for a in ["X", "Y", "Z"])
+            and len(results["combined"]["unsafe"]) == 0
+        ):
+            st.success("Overall: ✅ Safe")
+        else:
+            st.error(
+                f"Overall: ⚠️ Unsafe – per-axis unsafe duration: {total_unsafe_duration:.2f} s; "
+                f"combined unsafe points: {len(results['combined']['unsafe'])}"
+            )
+    with tab3:
 
-            styled = df_show.style.map(_colour_status, subset=["Status"])
-
-            st.dataframe(styled, use_container_width=True)
-
-    # --- Section 2: Combined Acceleration Check ---
-    st.markdown(
-        """
-        <div style='width: 100%; background-color: #2196F3; padding: 10px;'>
-            <h2 style='color: white; text-align: center;'>Combined Acceleration Safety Check</h2>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-    # Combined safety plot for combined acceleration check
-    st.subheader("Combined Safety Check (X, Y, Z) over Time:")
-    fig = go.Figure()
-
-    # Plot all axes for combined acceleration
-    fig.add_trace(
-        go.Scatter(
-            x=df["time_sec"],
-            y=df["acc_x_filtered"],
-            mode="lines",
-            name="X-axis g",
-            line=dict(color="cyan"),
+        # --- Section 1: Acceleration for Each Axis ---
+        st.markdown(
+            """
+            <div style='width: 100%; background-color: #2196F3; padding: 10px;'>
+                <h2 style='color: white; text-align: center;'>Uniaxial Acceleration Safety Check</h2>
+            </div>
+        """,
+            unsafe_allow_html=True,
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["time_sec"],
-            y=df["acc_y_filtered"],
-            mode="lines",
-            name="Y-axis g",
-            line=dict(color="orange"),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=df["time_sec"],
-            y=df["acc_z_filtered"],
-            mode="lines",
-            name="Z-axis g",
-            line=dict(color="green"),
-        )
-    )
 
-    # Highlight unsafe segments based on combined check
-    # **OPTIMIZED PART:** Generate all vertical line shapes as a list of dictionaries
-    vline_shapes = []
-    # NOTE: We only need the t_comb (time) value from the unsafe results
-    unsafe_times = [
-        t_comb for (t_comb, gxv, gyv, gzv) in results["combined"]["unsafe"]
-    ]
+        # Plot for each direction acceleration
+        st.subheader("Acceleration (g) over Time:")
+        fig = go.Figure()
 
-    for t_comb in unsafe_times:
-        vline_shapes.append(
-            dict(
-                type="line",
-                xref="x",  # Reference the x-axis
-                yref="paper",  # Reference the plot area (0 to 1)
-                x0=t_comb,
-                y0=0,
-                x1=t_comb,
-                y1=1,
-                line=dict(
-                    color="red",
-                    width=1,
-                ),
+        # Plot acceleration data for each axis
+        fig.add_trace(
+            go.Scatter(
+                x=df["time_sec"],
+                y=df["acc_x_filtered"],
+                mode="lines",
+                name="X-axis g",
+                line=dict(color="cyan"),
             )
         )
-    # dummy trace for the unsafe segments to appear in the legend
-    fig.add_trace(
-        go.Scatter(
-            x=[None],  # Invisible points
-            y=[None],  # Invisible points
-            mode="lines",
-            line=dict(color="red", width=1),
-            name="Unsafe Combined",
+        fig.add_trace(
+            go.Scatter(
+                x=df["time_sec"],
+                y=df["acc_y_filtered"],
+                mode="lines",
+                name="Y-axis g",
+                line=dict(color="orange"),
+            )
         )
-    )
-
-    # Apply all shapes in a single call to update_layout
-    fig.update_layout(
-        shapes=vline_shapes,
-    )
-
-    # Update layout for combined safety check
-    fig.update_layout(
-        xaxis_title="Time (s)",
-        yaxis_title="Acceleration (g)",
-        template="plotly_dark",  # dark theme
-        showlegend=True,
-        hovermode="x unified",  # Show hover for all data points at once
-        xaxis=dict(rangeslider=dict(visible=True)),  # Enable zooming
-    )
-
-    # Display the combined acceleration plot
-    st.plotly_chart(fig)
-
-    # Also add combined safety status in the output tables
-    combined_rows = [
-        {
-            "Time (s)": t,
-            "acceleration X (g)": gx,
-            "acceleration Y (g)": gy,
-            "acceleration Z (g)": gz,
-            "Status": "Unsafe",
-        }
-        for (t, gx, gy, gz) in results["combined"]["unsafe"]
-    ]
-    if combined_rows:
-        st.write("### Detected Unsafe Points in Combined Acceleration")
-        st.dataframe(pd.DataFrame(combined_rows), use_container_width=True)
-
-    # --- Combined pair plots (normalized) ---
-    # --- Pairwise combined envelopes in RAW g (ellipsoids) ---
-    gx = df["acc_x_filtered"].to_numpy()
-    gy = df["acc_y_filtered"].to_numpy()
-    gz = df["acc_z_filtered"].to_numpy()
-
-    st.subheader("Combined Acceleration – Ellipsoidal Graphs")
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        fig_xy = pair_plot_raw(gx, gy, "X", "Y", ride_type, "X–Y combined")
-        st.plotly_chart(fig_xy, use_container_width=True)
-    with col2:
-        fig_yz = pair_plot_raw(gy, gz, "Y", "Z", ride_type, "Y–Z combined")
-        st.plotly_chart(fig_yz, use_container_width=True)
-    with col3:
-        fig_xz = pair_plot_raw(gx, gz, "X", "Z", ride_type, "X–Z combined")
-        st.plotly_chart(fig_xz, use_container_width=True)
-
-    # 3 other plots with adm acc and normalized data
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        fig_xy = normalized_pair_plot(
-            gx, gy, ride_type, "X", "Y", "Normalized X-Y Combined Safety"
+        fig.add_trace(
+            go.Scatter(
+                x=df["time_sec"],
+                y=df["acc_z_filtered"],
+                mode="lines",
+                name="Z-axis g",
+                line=dict(color="green"),
+            )
         )
-        st.plotly_chart(fig_xy, use_container_width=True)
-    with col2:
-        fig_yz = normalized_pair_plot(
-            gy, gz, ride_type, "Y", "Z", "Normalized Y-Z Combined Safety"
+
+        # Highlight unsafe segments
+        for axis_name, color in zip(["X", "Y", "Z"], ["cyan", "orange", "green"]):
+            unsafe_segments = results[axis_name]["unsafe"]
+            for seg in unsafe_segments:
+                fig.add_vrect(
+                    x0=seg["start"],
+                    x1=seg["end"],
+                    fillcolor="red",
+                    opacity=0.3,
+                    line_width=0,
+                    annotation_text="Unsafe",
+                    annotation_position="top right",
+                )
+
+        # Plot spike points as red dots
+        spike_traces = []
+        for axis_name, signal_color in zip(
+            ["X", "Y", "Z"], ["cyan", "orange", "green"]
+        ):
+            spikes = results[axis_name]["spikes"]
+            spike_times = [t_spike for t_spike, _ in spikes]
+            spike_values = [g_spike for _, g_spike in spikes]
+            spike_traces.append(
+                go.Scatter(
+                    x=spike_times,
+                    y=spike_values,
+                    mode="markers",
+                    marker=dict(color="red", size=8),
+                    name=f"{axis_name} spike",
+                )
+            )
+
+        # Add all spike traces to the figure
+        for trace in spike_traces:
+            fig.add_trace(trace)
+
+        # Update layout for interactive plotting
+        fig.update_layout(
+            xaxis_title="Time (s)",
+            yaxis_title="Acceleration (g)",
+            template="plotly_dark",  # dark theme
+            showlegend=True,
+            hovermode="x unified",  # Show hover for all data points at once
+            xaxis=dict(rangeslider=dict(visible=True)),  # Enable zooming
         )
-        st.plotly_chart(fig_yz, use_container_width=True)
-    with col3:
-        fig_xz = normalized_pair_plot(
-            gx, gz, ride_type, "X", "Z", "Normalized X-Z Combined Safety"
+
+        # Display the interactive plot
+        st.plotly_chart(fig)
+
+        # Table of unsafe segments
+        rows = []
+        for axis in ["X", "Y", "Z"]:
+            for seg in results[axis]["unsafe"]:
+                rows.append(
+                    {
+                        "Axis": axis,
+                        "Start (s)": seg["start"],
+                        "End (s)": seg["end"],
+                        "Duration (s)": seg["duration"],
+                        "g_min (g)": seg["g_min"],
+                        "g_max (g)": seg["g_max"],
+                    }
+                )
+
+        if rows:
+            st.write("### Unsafe Segments")
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+        # Table of spikes
+        spike_rows = []
+        for axis in ["X", "Y", "Z"]:
+            for t_spike, g_spike in results[axis]["spikes"]:
+                spike_rows.append(
+                    {
+                        "Axis": axis,
+                        "Time (s)": t_spike,
+                        "acceleration (g)": g_spike,
+                        "Direction": "Positive" if g_spike > 0 else "Negative",
+                    }
+                )
+
+        if spike_rows:
+            st.write("### Detected Spikes (Above Threshold Magnitudes)")
+            st.dataframe(pd.DataFrame(spike_rows), use_container_width=True)
+
+        # Table of all segments
+        if st.checkbox("Show All Segments Table (Safe + Unsafe)", value=False):
+            all_segments = []
+            for axis in ["X", "Y", "Z"]:
+                for seg in results[axis]["safe"]:
+                    all_segments.append(
+                        {
+                            "Axis": axis,
+                            "Start (s)": seg["start"],
+                            "End (s)": seg["end"],
+                            "Duration (s)": seg["duration"],
+                            "g_min (g)": seg["g_min"],
+                            "g_max (g)": seg["g_max"],
+                            "Status": "Safe",
+                        }
+                    )
+                for seg in results[axis]["unsafe"]:
+                    all_segments.append(
+                        {
+                            "Axis": axis,
+                            "Start (s)": seg["start"],
+                            "End (s)": seg["end"],
+                            "Duration (s)": seg["duration"],
+                            "g_min (g)": seg["g_min"],
+                            "g_max (g)": seg["g_max"],
+                            "Status": "Unsafe",
+                        }
+                    )
+
+            if all_segments:
+                st.write("### All Segments (Safe and Unsafe)")
+                df_show = pd.DataFrame(all_segments)
+
+                # ----  colour the Status background  ----
+                def _colour_status(val):
+                    bg = "#ffdddd" if val == "Unsafe" else "#ddffdd"
+                    return f"background-color: {bg};"
+                    # if we want to color the texts "unsafe" to red and "safe" to green we should uncomment next 2 lines.
+                    # colour = "red" if val == "Unsafe" else "green"
+                    # return f"color: {colour}; font-weight: bold"
+
+                styled = df_show.style.map(_colour_status, subset=["Status"])
+
+                st.dataframe(styled, use_container_width=True)
+
+    with tab4:
+
+        # --- Section 2: Combined Acceleration Check ---
+        st.markdown(
+            """
+            <div style='width: 100%; background-color: #2196F3; padding: 10px;'>
+                <h2 style='color: white; text-align: center;'>Biaxial Acceleration Safety Check</h2>
+            </div>
+        """,
+            unsafe_allow_html=True,
         )
-        st.plotly_chart(fig_xz, use_container_width=True)
+
+        # Combined safety plot for combined acceleration check
+        st.subheader("Combined Safety Check (X, Y, Z) over Time:")
+        fig = go.Figure()
+
+        # Plot all axes for combined acceleration
+        fig.add_trace(
+            go.Scatter(
+                x=df["time_sec"],
+                y=df["acc_x_filtered"],
+                mode="lines",
+                name="X-axis g",
+                line=dict(color="cyan"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["time_sec"],
+                y=df["acc_y_filtered"],
+                mode="lines",
+                name="Y-axis g",
+                line=dict(color="orange"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["time_sec"],
+                y=df["acc_z_filtered"],
+                mode="lines",
+                name="Z-axis g",
+                line=dict(color="green"),
+            )
+        )
+
+        # Highlight unsafe segments based on combined check
+        # **OPTIMIZED PART:** Generate all vertical line shapes as a list of dictionaries
+        vline_shapes = []
+        # NOTE: We only need the t_comb (time) value from the unsafe results
+        unsafe_times = [
+            t_comb for (t_comb, gxv, gyv, gzv) in results["combined"]["unsafe"]
+        ]
+
+        for t_comb in unsafe_times:
+            vline_shapes.append(
+                dict(
+                    type="line",
+                    xref="x",  # Reference the x-axis
+                    yref="paper",  # Reference the plot area (0 to 1)
+                    x0=t_comb,
+                    y0=0,
+                    x1=t_comb,
+                    y1=1,
+                    line=dict(
+                        color="red",
+                        width=1,
+                    ),
+                )
+            )
+        # dummy trace for the unsafe segments to appear in the legend
+        fig.add_trace(
+            go.Scatter(
+                x=[None],  # Invisible points
+                y=[None],  # Invisible points
+                mode="lines",
+                line=dict(color="red", width=1),
+                name="Unsafe Combined",
+            )
+        )
+
+        # Apply all shapes in a single call to update_layout
+        fig.update_layout(
+            shapes=vline_shapes,
+        )
+
+        # Update layout for combined safety check
+        fig.update_layout(
+            xaxis_title="Time (s)",
+            yaxis_title="Acceleration (g)",
+            template="plotly_dark",  # dark theme
+            showlegend=True,
+            hovermode="x unified",  # Show hover for all data points at once
+            xaxis=dict(rangeslider=dict(visible=True)),  # Enable zooming
+        )
+
+        # Display the combined acceleration plot
+        st.plotly_chart(fig)
+
+        # Also add combined safety status in the output tables
+        combined_rows = [
+            {
+                "Time (s)": t,
+                "acceleration X (g)": gx,
+                "acceleration Y (g)": gy,
+                "acceleration Z (g)": gz,
+                "Status": "Unsafe",
+            }
+            for (t, gx, gy, gz) in results["combined"]["unsafe"]
+        ]
+        if combined_rows:
+            st.write("### Detected Unsafe Points in Combined Acceleration")
+            st.dataframe(pd.DataFrame(combined_rows), use_container_width=True)
+
+        # --- Combined pair plots (normalized) ---
+        # --- Pairwise combined envelopes in RAW g (ellipsoids) ---
+        gx = df["acc_x_filtered"].to_numpy()
+        gy = df["acc_y_filtered"].to_numpy()
+        gz = df["acc_z_filtered"].to_numpy()
+
+        st.subheader("Combined Acceleration – Ellipsoidal Graphs")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            fig_xy = pair_plot_raw(gx, gy, "X", "Y", ride_type, "X–Y combined")
+            st.plotly_chart(fig_xy, use_container_width=True)
+        with col2:
+            fig_yz = pair_plot_raw(gy, gz, "Y", "Z", ride_type, "Y–Z combined")
+            st.plotly_chart(fig_yz, use_container_width=True)
+        with col3:
+            fig_xz = pair_plot_raw(gx, gz, "X", "Z", ride_type, "X–Z combined")
+            st.plotly_chart(fig_xz, use_container_width=True)
+
+        # 3 other plots with adm acc and normalized data
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            fig_xy = normalized_pair_plot(
+                gx, gy, ride_type, "X", "Y", "Normalized X-Y Combined Safety"
+            )
+            st.plotly_chart(fig_xy, use_container_width=True)
+        with col2:
+            fig_yz = normalized_pair_plot(
+                gy, gz, ride_type, "Y", "Z", "Normalized Y-Z Combined Safety"
+            )
+            st.plotly_chart(fig_yz, use_container_width=True)
+        with col3:
+            fig_xz = normalized_pair_plot(
+                gx, gz, ride_type, "X", "Z", "Normalized X-Z Combined Safety"
+            )
+            st.plotly_chart(fig_xz, use_container_width=True)
