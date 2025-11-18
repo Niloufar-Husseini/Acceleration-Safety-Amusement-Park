@@ -149,12 +149,6 @@ st.markdown(
             width: 100%;
         }
 
-        .logo-left {
-            flex: 0 0 10%;            /* logo takes 20% of horizontal space */
-            max-width: 100px;         /* optional maximum size */
-            height: auto;
-            margin-right: 0px;       /* space between logo and text */
-        }
 
         .title-text {
             flex: 1;                  /* takes remaining space */
@@ -176,7 +170,38 @@ st.markdown(
             color: #2196F3 !important;
         }
 
+        .left-offset-button button {
+            margin-left: 60px !important;   /* adjust size here */
+        }
 
+        /* Default (desktop) */
+        .logo-wrapper {
+            padding-left: 40px !important;
+        }
+
+        /* Medium screens (tablets) */
+        @media (max-width: 1024px) {
+            .logo-wrapper {
+                padding-left: 20px !important;
+            }
+        }
+
+        /* Small screens (phones) */
+        @media (max-width: 600px) {
+            .logo-wrapper {
+                padding-left: 0 !important;    /* remove offsets */
+                text-align: left !important;   /* force left alignment */
+            }
+
+            .logo-wrapper img {
+                margin: 0 !important;
+                display: block !important;
+            }
+
+                div.stButton > button {
+                margin-left: 0 !important;
+            }
+        }
 
 
 
@@ -207,48 +232,32 @@ else:
 
 # Load the logo
 LOGO_URL = "assets/Logo3.png"
-if os.path.exists(LOGO_URL):
-    with open(LOGO_URL, "rb") as f:
-        data = f.read()
-    encoded_logo = base64.b64encode(data).decode("utf-8")
 
-    html_code = f"""
-    <div style="display: flex; align-items: center; width: 100%;">
+col1, col2 = st.columns([1, 7])
 
-        <div style="flex: 0 0 20%; text-align:center;">
-            <img src='data:image/png;base64,{encoded_logo}' style="max-width:120px; height:auto;">
-            <a href="https://nexgen-cableway.com/" target="_blank">
-                <button style="
-                    background-color:#2196F3;
-                    color:white;
-                    padding:10px 20px;
-                    border:none;
-                    border-radius:8px;
-                    font-size:18px;
-                    cursor:pointer;
-                    margin-top: 12px;">
-                    Visit Website 🌐
-                </button>
-            </a>
-        </div>
+with col1:
+    st.markdown("<div class='logo-wrapper'>", unsafe_allow_html=True)
+    st.image("assets/Logo3.png", width=250)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='left-offset-button'>",
+        unsafe_allow_html=True
+    )
+    if st.button("Visit Website 🌐"):
+        js = "window.open('https://nexgen-cableway.com/', '_blank')"
+        st.components.v1.html(f"<script>{js}</script>")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        <div style="flex: 1; padding-left: 25px;">
-            <h3 style='color:#003366; font-size:40px; font-weight:bold; margin:0;'>
-                Acceleration Effects on Passengers Medical Tolerances
-            </h3>
-            <h3 style='color:#003366; font-size:40px; font-weight:bold; margin:0;'>
-                When Using Amusement Devices
-            </h3>
-        </div>
 
-    </div>
-    """
 
-    # Render HTML properly
-    components.html(html_code, height=200)
-
-else:
-    st.warning("Logo not found at 'assets/Logo3.png'")
+with col2:
+    st.markdown(f"""
+                <div style="flex: 1; padding-left: 25px;">
+                    <h3 style='color:#003366; font-size:40px; font-weight:bold; margin:0;'>
+                        Acceleration Effects on Passengers Medical Tolerances When Using Amusement Devices
+                    </h3>
+                </div> """,
+            unsafe_allow_html=True,)
 
 tab1, tab2 = st.tabs(["Body Coordinate System", "Mode Selection"])
 
